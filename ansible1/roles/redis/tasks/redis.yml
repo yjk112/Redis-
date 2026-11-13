@@ -1,0 +1,5 @@
+- name: 部署Redis
+  hosts: redis
+  gather_facts: true
+  roles: 
+        - redis

@@ -1,0 +1,10 @@
+# php-fpm pool参数
+php_pm: dynamic
+php_pm_max_children: 50
+php_pm_start_servers: 10
+php_pm_min_spare_servers: 5
+php_pm_max_spare_servers: 20
+php_listen: "127.0.0.1:9000"
+php_pool_user: nginx
+php_pool_group: nginx
+

@@ -1,0 +1,6 @@
+- name:
+  hosts: nfs_server
+  gather_facts: true
+  roles:
+     - nfs-server
+

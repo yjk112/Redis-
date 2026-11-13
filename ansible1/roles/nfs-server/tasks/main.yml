@@ -1,0 +1,60 @@
+- name: 暂时停止firewalld
+  service: 
+      name: firewalld 
+      state: stopped
+
+- name: 暂时关闭selinux（临时切为 permissive）
+  ansible.posix.selinux:
+    state: permissive
+  when:
+    - ansible_selinux is defined
+    - ansible_selinux.status == "enabled"
+  failed_when: false
+
+
+- name: 安装依赖nfs-utils,rpcbind 
+  dnf: 
+    name: 
+     - nfs-utils
+     - rpcbind
+    state: present
+
+
+- name: 创建共享数据目录
+  file: 
+    path: /var/nfs/data
+    state: directory 
+    owner: root 
+    group: root
+    mode: "0777"
+
+- name: 创建日志目录
+  file: 
+     path: /var/nfs/log
+     state: directory
+     owner: root
+     group: root
+     mode: "0755"
+
+- name: 写入nfs共享配置
+  copy:
+    content: "/var/nfs/data 192.168.189.0/24(rw,sync,no_root_squash)"
+    dest: /etc/exports
+    mode: "0644"
+  notify: 重载exports共享配置
+
+
+- name: 启动rpcbind并开机自启 
+  service: 
+     name: rpcbind
+     state: started
+     enabled: yes
+
+- name: 启动nfs-server并开机自启
+  service: 
+      name: nfs-server
+      state: started
+      enabled: yes
+
+
+

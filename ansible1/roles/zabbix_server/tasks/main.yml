@@ -1,0 +1,286 @@
+#zabbix中的MySQL库安装部署
+- name: 安装zabbix的服务端
+  dnf: 
+    name: zabbix-server
+    state: present
+
+- name: 禁用系统自带 mysql 模块（解决AppStream冲突，必须第一步执行）
+  ansible.builtin.command: dnf module disable mysql -y
+  changed_when: false
+
+- name: 导入 MySQL GPG 公钥
+  ansible.builtin.rpm_key:
+    key: https://repo.mysql.com/RPM-GPG-KEY-mysql-2023  # 推荐使用 2023/2022 版本
+    state: present
+
+- name: 卸载系统自带的MySQL模块包
+  ansible.builtin.dnf:
+        name: "mysql*"
+        state: absent
+
+- name: 安装 MySQL 8.0 官方yum源
+  ansible.builtin.yum:
+    name: https://repo.mysql.com/mysql80-community-release-el8-3.noarch.rpm
+    state: present
+
+- name: 刷新yum缓存
+  ansible.builtin.command: dnf clean all
+  changed_when: false
+
+- name: 安装 mysql-community-server
+  ansible.builtin.yum:
+    name: mysql-community-server
+    state: present
+
+
+- name: 安装 PyMySQL 依赖 (供 mysql_user 模块使用)
+  ansible.builtin.package:
+    name: python3-PyMySQL   # CentOS/RHEL 8 的包名
+    state: present
+
+
+- name: 移除可能存在的旧版 MySQL 凭据文件
+  ansible.builtin.file:
+    path: /root/.my.cnf
+    state: absent
+
+- name: 停止 MySQL 服务
+  ansible.builtin.systemd:
+    name: mysqld
+    state: stopped
+
+- name: 清理残留 mysqld 进程
+  ansible.builtin.shell: |
+    pkill -9 mysqld || true
+    sleep 2
+  changed_when: false
+
+- name: 以跳过权限表模式启动 MySQL
+  ansible.builtin.shell: |
+    nohup /usr/sbin/mysqld --skip-grant-tables --skip-networking --user=mysql \
+      > /tmp/mysqld_skip.log 2>&1 &
+  async: 10
+  poll: 0
+  changed_when: false
+
+- name: 等待 MySQL 就绪
+  ansible.builtin.shell: |
+    for i in $(seq 1 30); do
+      mysqladmin --socket=/var/lib/mysql/mysql.sock ping 2>/dev/null && exit 0
+      sleep 1
+    done
+    exit 1
+  changed_when: false
+
+- name: 在跳过权限表模式下清空 root 密码
+  ansible.builtin.shell:
+    cmd: |
+      mysql -u root -NBe "UPDATE mysql.user SET authentication_string='' WHERE User='root' AND Host='localhost';"
+      mysql -u root -NBe "FLUSH PRIVILEGES;"
+  no_log: true
+  changed_when: false
+
+- name: 彻底终止 mysqld 并清理锁文件 (关键修复)
+  ansible.builtin.shell: |
+    pkill -9 -x mysqld 2>/dev/null || true
+    sleep 3
+    rm -f /var/run/mysqld/mysqld.pid
+    rm -f /var/lib/mysql/*.pid
+    rm -f /var/lib/mysql/*.lock
+    rm -f /tmp/mysql.sock.lock
+    # 二次确认：精确匹配进程名 mysqld，不会匹配到 sh -c 自身
+    if pgrep -x mysqld > /dev/null; then
+      echo "ERROR: 仍有 mysqld 进程残留："
+      pgrep -a mysqld
+      exit 1
+    fi
+  changed_when: false
+
+
+- name: 修正数据目录权限与 SELinux 上下文
+  ansible.builtin.shell: |
+    chown -R mysql:mysql /var/lib/mysql /var/run/mysqld
+    restorecon -Rv /var/lib/mysql /var/run/mysqld 2>/dev/null || true
+  changed_when: false
+
+- name: 正常启动 MySQL 服务
+  ansible.builtin.systemd:
+    name: mysqld
+    state: started
+    enabled: true
+    daemon_reload: true
+  register: mysql_start_result
+
+- name: 若 MySQL 启动失败，自动输出诊断日志
+  ansible.builtin.shell: |
+    echo "===== journalctl ====="
+    journalctl -u mysqld -n 50 --no-pager
+    echo "===== mysqld.log ====="
+    tail -n 50 /var/log/mysqld.log
+    echo "===== 残留进程 ====="
+    ps aux | grep '[m]ysqld'
+  when: mysql_start_result is failed
+  changed_when: false
+  failed_when: false
+
+
+- name: 停止 MySQL 服务
+  ansible.builtin.systemd:
+    name: mysqld
+    state: stopped
+
+- name: 清理残留 mysqld 进程和锁文件
+  ansible.builtin.shell: |
+    pkill -9 -x mysqld 2>/dev/null || true
+    sleep 3
+    rm -f /var/run/mysqld/mysqld.pid /var/lib/mysql/*.pid /var/lib/mysql/*.lock /tmp/mysql.sock.lock
+  changed_when: false
+
+- name: 以跳过权限表模式启动 MySQL
+  ansible.builtin.shell: |
+    nohup /usr/sbin/mysqld --skip-grant-tables --skip-networking --user=mysql \
+      > /tmp/mysqld_skip.log 2>&1 &
+  async: 10
+  poll: 0
+  changed_when: false
+
+- name: 等待 MySQL 就绪
+  ansible.builtin.shell: |
+    for i in $(seq 1 30); do
+      mysqladmin --socket=/var/lib/mysql/mysql.sock ping 2>/dev/null && exit 0
+      sleep 1
+    done
+    exit 1
+  changed_when: false
+
+- name: 清空 root 密码并清除过期标记 (关键修复)
+  ansible.builtin.shell:
+    cmd: |
+      mysql -u root -NBe "UPDATE mysql.user SET authentication_string='', password_expired='N', plugin='mysql_native_password' WHERE User='root' AND Host='localhost';"
+      mysql -u root -NBe "FLUSH PRIVILEGES;"
+  no_log: true
+  changed_when: false
+
+- name: 终止跳过权限表模式的进程并清理
+  ansible.builtin.shell: |
+    pkill -9 -x mysqld 2>/dev/null || true
+    sleep 3
+    rm -f /var/run/mysqld/mysqld.pid /var/lib/mysql/*.pid /var/lib/mysql/*.lock /tmp/mysql.sock.lock
+  changed_when: false
+
+- name: 正常启动 MySQL 服务
+  ansible.builtin.systemd:
+    name: mysqld
+    state: started
+    enabled: true
+    daemon_reload: true
+
+
+- name: 创建zabbix库
+  community.mysql.mysql_db:
+    name: zabbix
+    encoding: utf8mb4
+    collation: utf8mb4_bin
+    state: present
+    login_user: root
+    login_password: ""
+    login_unix_socket: /var/lib/mysql/mysql.sock
+
+- name: 创建zabbix账号并授权
+  community.mysql.mysql_user:
+    name: zabbix
+    host: localhost
+    password: "@Yjk19308769931"
+    priv: "zabbix.*:ALL"
+    state: present
+    login_user: root
+    login_password: ""
+    login_unix_socket: /var/lib/mysql/mysql.sock
+
+
+
+
+#部署zabbix的服务端
+- name: 安装 Zabbix 官方源 (el8)
+  ansible.builtin.dnf:
+    name: https://repo.zabbix.com/zabbix/7.0/rhel/8/x86_64/zabbix-release-latest-7.0.el8.noarch.rpm
+    state: present
+    disable_gpg_check: true
+
+- name: 卸载来自 EPEL 仓库的 Zabbix 包 (关键修复)
+  ansible.builtin.dnf:
+    name:
+      - "zabbix7.0-server*"
+      - "zabbix7.0-*"
+    state: absent
+    disable_excludes: epel        # 关键：卸载时绕过 epel 的 excludepkgs
+  ignore_errors: true
+
+
+- name: 在 EPEL 仓库中排除所有 Zabbix 包
+  ansible.builtin.lineinfile:
+    path: /etc/yum.repos.d/epel.repo
+    regexp: '^excludepkgs='
+    line: 'excludepkgs=zabbix*'
+    state: present
+
+- name: 安装 Zabbix 服务端及相关组件
+  ansible.builtin.dnf:
+    name:
+      - zabbix-server-mysql
+      - zabbix-web-mysql          # 替代 zabbix-web-nginx
+      - zabbix-nginx-conf         # Nginx 前端配置（必须）
+      - zabbix-sql-scripts
+      - zabbix-agent
+    state: present
+
+- name: 启动并启用 firewalld 服务
+  ansible.builtin.systemd:
+    name: firewalld
+    state: started
+    enabled: true
+
+- name: 放行 Zabbix Web 端口 (HTTP 80)
+  ansible.posix.firewalld:
+    service: http
+    permanent: true
+    immediate: true
+    state: enabled
+
+
+- name: 启动zabbix-server
+  service: 
+     name: zabbix-server
+     state: started
+     enabled: yes
+
+
+#部署zabbix的客户端
+- name: 安装zabbix官方源
+  dnf:
+    name: https://repo.zabbix.com/zabbix/7.0/rocky/9/x86_64/zabbix-agent-7.0.0-release1.el9.x86_64.rpm
+
+- name: 安装zabbix-agent
+  dnf: 
+   name: zabbix-agent
+   state: present
+
+- name: 放行客户端端口
+  firewalld: 
+     service: zabbix-agent
+     permanent: yes
+     state: enabled
+     immediate: yes
+- name: 启动zabbix-agent
+  service:
+      name: zabbix-agent
+      state: started
+      enabled: yes
+
+
+
+
+
+
+
+

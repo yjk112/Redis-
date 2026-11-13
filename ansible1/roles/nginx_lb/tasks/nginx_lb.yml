@@ -1,0 +1,5 @@
+- name: 
+  hosts: lb
+  gather_facts: true
+  roles:
+    - nginx_lb 

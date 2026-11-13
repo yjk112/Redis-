@@ -1,0 +1,7 @@
+---
+- name: 测试 common 角色
+  hosts: all
+  gather_facts: true
+  roles:
+    - common
+

@@ -1,0 +1,19 @@
+- name: 安装nfs-client的依赖
+  dnf:
+    name: nfs-utils
+    state: present
+
+- name: 设置挂载点
+  file: 
+    path: /mnt/nfs_data
+    state: directory
+    mode: "0644"
+
+- name: 挂载nfs并写入fstab
+  mount:
+     path: /mnt/nfs_data
+     src: "192.168.189.135:/var/nfs/data"
+     fstype: nfs
+     opts: "ro,nfsvers=4.2,_netdev,hard,timeo=600,retrans=2"
+     state: mounted
+

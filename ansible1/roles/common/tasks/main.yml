@@ -1,0 +1,26 @@
+---
+- name: 时区设置为中国上海
+  timezone:
+    name: Asia/Shanghai
+
+- name: 安装基础命令
+  yum:
+    name:
+        - lrzsz
+        - tree
+        - net-tools
+        - epel-release
+        - lsof
+        - unzip 
+        - wget
+        - yum 
+    state: present
+
+- name: 关闭selinux
+  selinux:
+     state: disabled
+
+
+
+
+

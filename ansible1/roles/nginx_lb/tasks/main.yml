@@ -1,0 +1,51 @@
+- name: 导入nginx官方gpg密钥
+  ansible.builtin.rpm_key:
+    key: https://nginx.ac.cn/keys/nginx_signing.key
+    state: present
+
+
+
+
+- name: 安装NGINX官方rpm包
+  yum:
+    name: https://nginx.org/packages/rhel/7/x86_64/RPMS/nginx-1.18.0-1.el7.ngx.x86_64.rpm
+    state: present
+
+- name: 安装NGINX和keepalived
+  yum:
+    name:
+      - nginx
+      - keepalived
+    state: present
+
+- name: 配置NGINX的负载均衡
+  template:
+    src: nginx_lb.conf.j2
+    dest: /etc/nginx/conf.d/nginx_lb.conf
+
+- name: 检查NGINX的语法
+  shell: nginx -t
+  register: nginx_check
+  changed_when: false
+
+- name: Keepalived的配置
+  template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+
+- name: 防火墙开放80业务端口
+  firewalld:
+    port: 80/tcp
+    permanent: yes
+    immediate: yes
+    state: enabled
+
+- name: 启动服务并设置开机自启
+  service:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+  loop:
+    - nginx
+    - keepalived
+

@@ -1,0 +1,69 @@
+# Redis configuration - managed by Ansible
+# Do not edit manually. Changes will be overwritten.
+
+################################## NETWORK #####################################
+
+bind {{ redis_bind_address | default('127.0.0.1') }}
+port {{ redis_port | default(6379) }}
+protected-mode {{ redis_protected_mode | default('yes') }}
+tcp-backlog {{ redis_tcp_backlog | default(511) }}
+timeout {{ redis_timeout | default(0) }}
+tcp-keepalive {{ redis_tcp_keepalive | default(300) }}
+
+################################## GENERAL #####################################
+
+daemonize no
+supervised systemd
+pidfile /var/run/redis/redis-server.pid
+loglevel {{ redis_loglevel | default('notice') }}
+logfile {{ redis_logfile | default('/var/log/redis/redis-server.log') }}
+databases {{ redis_databases | default(16) }}
+
+################################## SNAPSHOTTING ################################
+
+{% if redis_save_rules is defined %}
+{% for rule in redis_save_rules %}
+save {{ rule }}
+{% endfor %}
+{% else %}
+save 900 1
+save 300 10
+save 60 10000
+{% endif %}
+
+stop-writes-on-bgsave-error yes
+rdbcompression yes
+rdbchecksum yes
+dbfilename {{ redis_rdb_filename | default('dump.rdb') }}
+dir {{ redis_rdb_dir | default('/var/lib/redis') }}
+
+################################## SECURITY ####################################
+
+{% if redis_require_password | default(false) %}
+requirepass {{ redis_password }}
+{% endif %}
+
+{% if redis_masterauth is defined %}
+masterauth {{ redis_masterauth }}
+{% endif %}
+
+################################## MEMORY ######################################
+
+maxmemory {{ redis_maxmemory | default('256mb') }}
+maxmemory-policy {{ redis_maxmemory_policy | default('allkeys-lru') }}
+maxmemory-samples {{ redis_maxmemory_samples | default(5) }}
+
+################################## APPEND ONLY MODE ############################
+
+{% if redis_aof_enabled | default(false) %}
+appendonly yes
+appendfilename {{ redis_aof_filename | default('"appendonly.aof"') }}
+appendfsync {{ redis_aof_fsync | default('everysec') }}
+{% else %}
+appendonly no
+{% endif %}
+
+################################## SLOW LOG ####################################
+
+slowlog-log-slower-than {{ redis_slowlog_log_slower_than | default(10000) }}
+slowlog-max-len {{ redis_slowlog_max_len | default(128) }}

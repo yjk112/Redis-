@@ -1,0 +1,62 @@
+- name: 临时关闭selinux
+  command: setenforce 0
+  changed_when: false
+  when: ansible_selinux.status == "enabled"
+
+
+- name: 导入remi gpg秘钥
+  rpm_key:
+      key: https://rpms.remirepo.net/RPM-GPG-KEY-remi
+      state: present
+
+
+
+- name : 安装remi仓库
+  dnf: 
+    name: "https://rpms.remirepo.net/enterprise/remi-release-8.rpm"
+    state: present
+    disable_gpg_check: true
+
+- name: 重置PHP模块流
+  command: dnf module reset php -y 
+  changed_when: false
+
+
+
+- name : 启用PHP8.2模块
+  command: dnf module enable -y php:remi-8.2
+  register: php_module_enable 
+  changed_when: "'Enabling' in php_module_enable.stdout"
+
+
+- name: 安装PHP及扩展依赖
+  dnf: 
+    name: 
+      - php-fpm
+      - php-mysqlnd
+      - php-gd
+      - php-mbstring
+      - php-xml
+      - php-json
+      - php-zip
+      - php-intl
+      - php-bcmath
+      - php-redis
+      - php-opcache
+    state: present 
+
+- name: 部署php-fpm的配置文件
+  template: 
+     src: www.conf.j2
+     dest: /etc/php-fpm.d/www.conf
+     owner: root
+     group: root
+     mode: "0644"
+
+- name: 启动PHP设置自启
+  service: 
+     name: php-fpm   
+     state: started 
+     enabled: yes 
+
+

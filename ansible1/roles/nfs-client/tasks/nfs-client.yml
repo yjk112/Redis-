@@ -1,0 +1,6 @@
+- name: 部署nfs-client
+  hosts: nfs_client
+  gather_facts: true
+  roles: 
+     - nfs-client
+

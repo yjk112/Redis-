@@ -1,0 +1,8 @@
+- name: 开启防火墙
+  service: 
+     name: firewalld
+     state: started
+     enabled: yes
+
+ 
+

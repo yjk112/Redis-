@@ -1,0 +1,8 @@
+- name: 部署zabbix
+  hosts:
+      - Zabbix_server
+      - Zabbix_client
+  
+  roles: 
+     - zabbix_server
+

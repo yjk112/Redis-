@@ -1,0 +1,47 @@
+- name: Install Redis from repository
+  dnf:
+    name: redis
+    state: present 
+   
+   
+- name: Redis的配置部署
+  ansible.builtin.template:
+      src: redis.conf.j2
+      dest: /etc/redis.conf
+      owner: root
+      group: root
+      mode: "0644"
+      backup: true
+  
+ 
+
+- name: Ensure Redis log directory exists
+  ansible.builtin.file:
+    path: /var/log/redis
+    state: directory
+    owner: redis
+    group: redis
+    mode: "0750"
+
+- name: Ensure Redis data directory exists
+  ansible.builtin.file:
+    path: /var/lib/redis
+    state: directory
+    owner: redis
+    group: redis
+    mode: "0750"
+
+
+- name: 防火墙放行6379端口
+  firewalld: 
+      port: 6379/tcp
+      permanent: yes
+      state: enabled
+      immediate: yes
+
+- name: redis启动并开机自启
+  ansible.builtin.service:
+    name: redis        
+    state: started     
+    enabled: yes
+      

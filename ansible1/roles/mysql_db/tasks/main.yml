@@ -1,0 +1,97 @@
+- name: 关闭rocky8内置mysql模块（必须！会冲突）
+  dnf:
+    name: '@mysql'
+    state: absent
+
+- name: 下载mysql8.0 el8源rpm（USTC镜像）
+  get_url:
+    url: https://mirrors.ustc.edu.cn/mysql-repo/mysql80-community-release-el8-3.noarch.rpm
+    dest: /tmp/mysql80-community-release-el8-3.noarch.rpm
+
+- name: 安装MySQL官方源
+  dnf:
+    name: /tmp/mysql80-community-release-el8-3.noarch.rpm
+    state: present
+    disable_gpg_check: yes
+
+- name: 重置MySQL模块状态（清除已启用/禁用的记录）
+  ansible.builtin.command:
+    cmd: dnf -y module reset mysql
+  changed_when: false
+
+- name: 禁用Rocky8内置MySQL模块（解除包过滤）
+  ansible.builtin.command:
+    cmd: dnf -y module disable mysql
+  register: mysql_module_disable
+  changed_when: "'Nothing to do' not in mysql_module_disable.stdout"
+
+- name: 安装MySQL服务端
+  yum:
+    name: mysql-community-server
+    state: present
+
+- name: 安装pymysql依赖
+  ansible.builtin.dnf:
+    name: python3-PyMySQL
+    state: present
+
+- name: 启动MySQL并开机自启
+  service:
+    name: mysqld
+    state: started
+    enabled: yes
+
+- name: 等待mysqld的日志文件（生成临时密码）
+  wait_for:
+    path: /var/log/mysqld.log
+    state: present
+    timeout: 10
+
+- name: 获取临时密码
+  shell: grep 'temporary password' /var/log/mysqld.log | awk '{print $NF}'
+  register: mysql_temp_pwd
+  changed_when: false
+
+# 增加：判断是否拿到临时密码
+- name: 判断是否存在mysql初始临时密码
+  set_fact:
+    has_temp_pwd: "{{ mysql_temp_pwd.stdout | length > 0 }}"
+
+- name: 检查是否已使用新密码登录成功（幂等判断）
+  ansible.mysql.mysql_query:
+    login_user: root
+    login_password: "@Yjk19308769931"
+    query: SELECT 1
+  register: mysql_new_pwd_check
+  ignore_errors: true
+  no_log: false
+
+# 条件叠加：【测试登录失败】并且【存在临时密码】才执行修改
+- name: 修改root密码并设置永不过期
+  ansible.builtin.command:
+    cmd: >
+      mysql -u root -p'{{ mysql_temp_pwd.stdout }}'
+      --connect-expired-password
+      -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '@Yjk19308769931' PASSWORD EXPIRE NEVER; FLUSH PRIVILEGES;"
+  when: mysql_new_pwd_check is failed and has_temp_pwd
+  no_log: false
+  changed_when: true
+
+
+- name: 防火墙放行3306端口
+  firewalld:
+    port: 3306/tcp
+    permanent: yes
+    immediate: yes
+    state: enabled
+
+- name: root账号支持远程登录
+  community.mysql.mysql_user:
+    name: root
+    host: '192.168.189.%'
+    login_user: root
+    login_password: "@Yjk19308769931"
+    password: "@Yjk19308769931"
+    state: present
+  no_log: true
+
