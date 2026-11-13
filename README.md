@@ -1,4 +1,12 @@
-                                                         Redis一主三从主从复制与哨兵模式自动选主
+                                        Redis一主三从主从复制与哨兵模式自动选主
+   
+    
+    
+    
+    
+    
+    
+    
     1.背景与主要概念： 这里还是看c站技术博主的文档吧        https://blog.csdn.net/weixin_29197835/article/details/170513896?ops_request_misc=&request_id=&biz_i
 
 
